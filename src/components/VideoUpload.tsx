@@ -7,6 +7,37 @@ const VideoUpload = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  const getVideoDuration = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        const minutes = Math.floor(video.duration / 60);
+        const seconds = Math.floor(video.duration % 60);
+        resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      };
+      video.src = URL.createObjectURL(file);
+    });
+  };
+
+  const generateThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      video.onloadeddata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg'));
+      };
+
+      video.src = URL.createObjectURL(file);
+      video.currentTime = 1; // Capture frame at 1 second
+    });
+  };
+
   const handleUpload = async (files: File[]) => {
     const videoFiles = files.filter(file => file.type.startsWith('video/'));
     
@@ -21,7 +52,38 @@ const VideoUpload = () => {
       try {
         console.log('Starting upload for:', file.name);
         
-        // Upload to Supabase Storage
+        // Get video metadata
+        const [duration, thumbnailDataUrl] = await Promise.all([
+          getVideoDuration(file),
+          generateThumbnail(file)
+        ]);
+
+        // Convert thumbnail data URL to blob
+        const thumbnailResponse = await fetch(thumbnailDataUrl);
+        const thumbnailBlob = await thumbnailResponse.blob();
+
+        // Upload thumbnail to storage
+        const thumbnailExt = 'jpg';
+        const thumbnailPath = `thumbnails/${crypto.randomUUID()}.${thumbnailExt}`;
+        
+        const { error: thumbnailError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailPath, thumbnailBlob, {
+            contentType: 'image/jpeg'
+          });
+
+        if (thumbnailError) {
+          console.error('Thumbnail upload error:', thumbnailError);
+          toast.error(`Failed to upload thumbnail for ${file.name}`);
+          continue;
+        }
+
+        // Get thumbnail URL
+        const { data: { publicUrl: thumbnailUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(thumbnailPath);
+
+        // Upload video file
         const fileExt = file.name.split('.').pop();
         const filePath = `${crypto.randomUUID()}.${fileExt}`;
         
@@ -37,17 +99,14 @@ const VideoUpload = () => {
 
         console.log('File uploaded successfully:', uploadData);
 
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(filePath);
-
         // Insert video metadata into the videos table
         const { error: dbError } = await supabase
           .from('videos')
           .insert({
             title: file.name,
             file_path: filePath,
+            thumbnail_url: thumbnailUrl,
+            duration: duration
           });
 
         if (dbError) {

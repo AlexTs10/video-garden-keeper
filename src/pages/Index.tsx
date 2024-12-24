@@ -22,10 +22,7 @@ const Index = () => {
         throw error;
       }
 
-      return data.map(video => ({
-        ...video,
-        thumbnail: video.thumbnail_url || 'https://images.unsplash.com/photo-1485846234645-a62644f84728',
-      }));
+      return data;
     },
   });
 
@@ -93,7 +90,7 @@ const Index = () => {
                 <VideoCard
                   key={video.id}
                   title={video.title}
-                  thumbnail={video.thumbnail}
+                  thumbnail={video.thumbnail_url || 'https://images.unsplash.com/photo-1485846234645-a62644f84728'}
                   duration={video.duration || "00:00"}
                   onClick={() => {
                     const videoUrl = supabase.storage
