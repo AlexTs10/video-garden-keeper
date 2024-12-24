@@ -2,27 +2,36 @@ import React, { useState } from 'react';
 import VideoCard from '../components/VideoCard';
 import VideoUpload from '../components/VideoUpload';
 import { Search, Plus, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Placeholder data - in a real app this would come from your backend
-  const videos = [
-    {
-      id: 1,
-      title: "Introduction to Video Library",
-      thumbnail: "https://images.unsplash.com/photo-1485846234645-a62644f84728",
-      duration: "2:30"
+  const { data: videos = [], isLoading } = useQuery({
+    queryKey: ['videos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching videos:', error);
+        throw error;
+      }
+
+      return data.map(video => ({
+        ...video,
+        thumbnail: video.thumbnail_url || 'https://images.unsplash.com/photo-1485846234645-a62644f84728',
+      }));
     },
-    {
-      id: 2,
-      title: "How to Upload Videos",
-      thumbnail: "https://images.unsplash.com/photo-1496559249665-c7e2874707ea",
-      duration: "3:45"
-    },
-    // Add more placeholder videos as needed
-  ];
+  });
+
+  const filteredVideos = videos.filter(video =>
+    video.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-6">
@@ -57,7 +66,7 @@ const Index = () => {
 
           {/* Upload Modal */}
           {isUploadOpen && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 animate-fade-in z-50">
               <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold">Upload Video</h2>
@@ -75,19 +84,26 @@ const Index = () => {
 
           {/* Video Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {videos
-              .filter(video => 
-                video.title.toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map(video => (
+            {isLoading ? (
+              <p>Loading videos...</p>
+            ) : filteredVideos.length === 0 ? (
+              <p>No videos found</p>
+            ) : (
+              filteredVideos.map(video => (
                 <VideoCard
                   key={video.id}
                   title={video.title}
                   thumbnail={video.thumbnail}
-                  duration={video.duration}
-                  onClick={() => console.log('Video clicked:', video.id)}
+                  duration={video.duration || "00:00"}
+                  onClick={() => {
+                    const videoUrl = supabase.storage
+                      .from('videos')
+                      .getPublicUrl(video.file_path).data.publicUrl;
+                    window.open(videoUrl, '_blank');
+                  }}
                 />
-              ))}
+              ))
+            )}
           </div>
         </div>
       </div>
